@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,6 +73,7 @@ class MainActivity : ComponentActivity() {
         var directory by remember { mutableStateOf(preferences.getString("eden_tree_uri", null)) }
         var connected by isConnectedState
         var status by statusState
+        var manualTokenInput by remember { mutableStateOf("") }
 
         val workInfos by WorkManager.getInstance(this)
             .getWorkInfosForUniqueWorkLiveData(SyncScheduler.WORK_NAME_MANUAL)
@@ -117,7 +120,7 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text("NXSync", style = MaterialTheme.typography.headlineLarge)
-                    Spacer(Modifier.height(28.dp))
+                    Spacer(Modifier.height(20.dp))
                     Text(if (directory == null) "Eden folder: Not selected" else "Eden folder: Ready")
                     Text("Status: $status", color = Color(0xFF91A1B7))
 
@@ -138,7 +141,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(18.dp))
                     Button(
                         onClick = {
                             if (!connected) {
@@ -146,14 +149,61 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (connected) "Google Drive Connected" else "Connect Google Drive") }
-                    Spacer(Modifier.height(10.dp))
+                    ) { Text(if (connected) "Google Drive Connected" else "1. Auto Connect via Browser") }
+
+                    if (!connected) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Or paste Auth Code / Refresh Token:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF91A1B7),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = manualTokenInput,
+                            onValueChange = { manualTokenInput = it },
+                            placeholder = { Text("Paste code or 1//... token") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF4ADE80),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color(0xFFE7EDF7),
+                                unfocusedTextColor = Color(0xFFE7EDF7),
+                            ),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = {
+                                if (manualTokenInput.isNotBlank()) {
+                                    status = "Verifying token..."
+                                    lifecycleScope.launch {
+                                        val ok = GoogleAuthorization.exchangeManualCodeOrToken(this@MainActivity, manualTokenInput)
+                                        if (ok) {
+                                            isConnectedState.value = true
+                                            status = "Google Drive Connected!"
+                                            Toast.makeText(this@MainActivity, "Connected to Google Drive!", Toast.LENGTH_SHORT).show()
+                                            if (directory != null) {
+                                                SyncScheduler.schedule(this@MainActivity)
+                                            }
+                                        } else {
+                                            status = "Invalid token or authorization code"
+                                            Toast.makeText(this@MainActivity, "Invalid Token or Code", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("2. Submit Token / Code") }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = { folderPicker.launch(null) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Choose Eden save folder") }
                     if (directory != null && connected) {
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = {
                                 SyncScheduler.syncNow(this@MainActivity)

@@ -32,6 +32,41 @@ object GoogleAuthorization {
 
     private var activeServer: ServerSocket? = null
 
+    fun saveRefreshToken(context: Context, refreshToken: String): Boolean {
+        val token = refreshToken.trim()
+        if (token.isEmpty()) return false
+        val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("google_refresh_token", token)
+            .remove("google_access_token")
+            .apply()
+        return true
+    }
+
+    suspend fun exchangeManualCodeOrToken(context: Context, input: String): Boolean = withContext(Dispatchers.IO) {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return@withContext false
+
+        // If user pasted a refresh token directly (e.g. starting with 1// or 1/ or long token)
+        if (trimmed.startsWith("1/") || trimmed.length > 50) {
+            if (saveRefreshToken(context, trimmed)) {
+                val access = accessToken(context)
+                if (!access.isNullOrEmpty()) {
+                    return@withContext true
+                }
+            }
+        }
+
+        // Otherwise try exchanging as authorization code with standard redirect URIs
+        val redirectUris = listOf("http://localhost", "http://127.0.0.1", "nxsync://oauth")
+        for (redirectUri in redirectUris) {
+            if (exchangeCode(context, trimmed, redirectUri)) {
+                return@withContext true
+            }
+        }
+        return@withContext false
+    }
+
     suspend fun startLoopbackAuth(context: Context, onResult: (Boolean, String?) -> Unit) = withContext(Dispatchers.IO) {
         try {
             activeServer?.close()
@@ -53,7 +88,7 @@ object GoogleAuthorization {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
 
-            server.soTimeout = 180_000 // 3 minute timeout
+            server.soTimeout = 180_000
             val client = server.accept()
             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
             val requestLine = reader.readLine().orEmpty()
