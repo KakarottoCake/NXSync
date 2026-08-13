@@ -1,0 +1,18 @@
+:root { color-scheme: dark; font: 15px system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0d121a; color: #e7edf7; }
+main { padding: 30px; }
+.brand { margin-bottom: 24px; font-size: 26px; font-weight: 750; letter-spacing: -.8px; }
+.brand span { color: #63e6be; }
+section { padding: 8px 0 20px; }
+.row { display: flex; align-items: center; justify-content: space-between; min-height: 42px; border-bottom: 1px solid #263142; }
+.label { color: #91a1b7; }
+.value { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { padding: 4px 10px; border-radius: 999px; background: #293548; }
+.pill.syncing { color: #0d121a; background: #ffd43b; }
+.pill.offline { background: #8f2d3c; }
+.pill.idle { background: #176b55; }
+#detail { min-height: 18px; color: #91a1b7; font-size: 13px; }
+button { width: 100%; padding: 12px; border: 0; border-radius: 8px; color: #0d121a; background: #63e6be; font-weight: 700; cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+

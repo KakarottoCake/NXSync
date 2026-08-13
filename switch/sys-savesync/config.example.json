@@ -1,0 +1,7 @@
+{
+  "client_id": "YOUR_INSTALLED_APP_CLIENT_ID.apps.googleusercontent.com",
+  "client_secret": "",
+  "refresh_token": "COPIED_FROM_THE_DESKTOP_PAIRING_FLOW",
+  "folder_id": ""
+}
+

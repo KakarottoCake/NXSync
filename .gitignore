@@ -1,0 +1,23 @@
+# Desktop
+/bin/
+/dist/
+.tools/
+/bin/*.exe
+
+# Go
+/coverage.out
+
+# Android/Gradle
+.gradle/
+**/build/
+local.properties
+
+# Switch/devkitPro
+switch/sys-savesync/sys-savesync.nsp
+switch/overlay/savesync.ovl
+*.elf
+
+# Credentials and runtime state
+config.json
+token.json
+*.tmp
