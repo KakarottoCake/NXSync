@@ -47,7 +47,8 @@ class SaveSyncWorker(
         }
 
         try {
-            val drive = DriveGateway(token)
+            val folderId = GoogleAuthorization.getFolderId(applicationContext)
+            val drive = DriveGateway(token, folderId)
             var uploaded = 0
             var synced = 0
             var current = 0

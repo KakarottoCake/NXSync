@@ -3,7 +3,6 @@ package dev.nxsync.android
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -16,21 +15,31 @@ import java.net.ServerSocket
 import java.net.URI
 import java.net.URLEncoder
 
-private const val CLIENT_ID = "99491436094-o26b6pcetir1hdnkrm2fjgeuhnpojoqk.apps.googleusercontent.com"
-private const val SCOPE = "https://www.googleapis.com/auth/drive.file"
-private const val SECRET_B64 = "R09DU1BYLURfWmFjNENwSDcxWHAyRHJnLW1jUW51Q1pIMQ=="
-
 object GoogleAuthorization {
 
-    private fun getClientSecret(): String {
-        return try {
-            String(Base64.decode(SECRET_B64, Base64.DEFAULT), Charsets.UTF_8).trim()
-        } catch (_: Exception) {
-            ""
-        }
+    fun getClientId(context: Context): String {
+        val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
+        return prefs.getString("google_client_id", "") ?: ""
     }
 
-    private var activeServer: ServerSocket? = null
+    fun getClientSecret(context: Context): String {
+        val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
+        return prefs.getString("google_client_secret", "") ?: ""
+    }
+
+    fun getFolderId(context: Context): String {
+        val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
+        return prefs.getString("google_folder_id", "") ?: ""
+    }
+
+    fun saveConfig(context: Context, clientId: String, clientSecret: String, folderId: String) {
+        val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("google_client_id", clientId.trim())
+            .putString("google_client_secret", clientSecret.trim())
+            .putString("google_folder_id", folderId.trim())
+            .apply()
+    }
 
     fun saveRefreshToken(context: Context, refreshToken: String): Boolean {
         val token = refreshToken.trim()
@@ -43,7 +52,15 @@ object GoogleAuthorization {
         return true
     }
 
+    private var activeServer: ServerSocket? = null
+
     suspend fun startLoopbackAuth(context: Context, onResult: (Boolean, String?) -> Unit) = withContext(Dispatchers.IO) {
+        val clientId = getClientId(context)
+        if (clientId.isEmpty()) {
+            withContext(Dispatchers.Main) { onResult(false, "Please enter your Client ID first") }
+            return@withContext
+        }
+
         try {
             activeServer?.close()
             val loopback = InetAddress.getByName("127.0.0.1")
@@ -52,11 +69,12 @@ object GoogleAuthorization {
             val port = server.localPort
             val redirectUri = "http://127.0.0.1:$port"
 
+            val scope = "https://www.googleapis.com/auth/drive.file"
             val authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" +
-                "client_id=" + URLEncoder.encode(CLIENT_ID, "UTF-8") +
+                "client_id=" + URLEncoder.encode(clientId, "UTF-8") +
                 "&redirect_uri=" + URLEncoder.encode(redirectUri, "UTF-8") +
                 "&response_type=code" +
-                "&scope=" + URLEncoder.encode(SCOPE, "UTF-8") +
+                "&scope=" + URLEncoder.encode(scope, "UTF-8") +
                 "&access_type=offline" +
                 "&prompt=consent"
 
@@ -64,7 +82,7 @@ object GoogleAuthorization {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
 
-            server.soTimeout = 180_000 // 3 minute timeout
+            server.soTimeout = 180_000 // 3 min timeout
             val client = server.accept()
             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
             val requestLine = reader.readLine().orEmpty()
@@ -108,6 +126,9 @@ object GoogleAuthorization {
     }
 
     suspend fun exchangeCode(context: Context, code: String, redirectUri: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        val clientId = getClientId(context)
+        val clientSecret = getClientSecret(context)
+
         try {
             val url = URI("https://oauth2.googleapis.com/token").toURL()
             val conn = url.openConnection() as HttpURLConnection
@@ -115,11 +136,13 @@ object GoogleAuthorization {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
-            val body = "client_id=" + URLEncoder.encode(CLIENT_ID, "UTF-8") +
-                "&client_secret=" + URLEncoder.encode(getClientSecret(), "UTF-8") +
+            var body = "client_id=" + URLEncoder.encode(clientId, "UTF-8") +
                 "&code=" + URLEncoder.encode(code.trim(), "UTF-8") +
                 "&grant_type=authorization_code" +
                 "&redirect_uri=" + URLEncoder.encode(redirectUri, "UTF-8")
+            if (clientSecret.isNotEmpty()) {
+                body += "&client_secret=" + URLEncoder.encode(clientSecret, "UTF-8")
+            }
 
             conn.outputStream.use { it.write(body.toByteArray()) }
 
@@ -173,6 +196,8 @@ object GoogleAuthorization {
     }
 
     fun accessToken(context: Context): String? {
+        val clientId = getClientId(context)
+        val clientSecret = getClientSecret(context)
         val prefs = context.getSharedPreferences("nxsync", Context.MODE_PRIVATE)
         val refreshToken = prefs.getString("google_refresh_token", null) ?: return null
 
@@ -183,10 +208,12 @@ object GoogleAuthorization {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
-            val body = "client_id=" + URLEncoder.encode(CLIENT_ID, "UTF-8") +
-                "&client_secret=" + URLEncoder.encode(getClientSecret(), "UTF-8") +
+            var body = "client_id=" + URLEncoder.encode(clientId, "UTF-8") +
                 "&refresh_token=" + URLEncoder.encode(refreshToken, "UTF-8") +
                 "&grant_type=refresh_token"
+            if (clientSecret.isNotEmpty()) {
+                body += "&client_secret=" + URLEncoder.encode(clientSecret, "UTF-8")
+            }
 
             conn.outputStream.use { it.write(body.toByteArray()) }
 

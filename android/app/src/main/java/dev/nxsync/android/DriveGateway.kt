@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets
 
 private const val API = "https://www.googleapis.com/drive/v3"
 private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
-private const val FOLDER_ID = "1-6xIz7Jqfu4lb4Ccmq_Eoy-4PIB3zHVW"
 
 data class RemoteSave(
     val id: String,
@@ -18,7 +17,10 @@ data class RemoteSave(
     val modifiedUnix: Long,
 )
 
-class DriveGateway(private val accessToken: String) {
+class DriveGateway(
+    private val accessToken: String,
+    private val folderId: String = "",
+) {
     fun push(titleId: String, archive: PreparedArchive): Boolean {
         val name = "$titleId.zip"
         val remote = find(name)
@@ -32,9 +34,9 @@ class DriveGateway(private val accessToken: String) {
         val metadata = JSONObject()
             .put("name", name)
             .put("appProperties", properties)
-        
-        if (remote == null && FOLDER_ID.isNotEmpty()) {
-            metadata.put("parents", JSONArray().put(FOLDER_ID))
+
+        if (remote == null && folderId.isNotEmpty()) {
+            metadata.put("parents", JSONArray().put(folderId))
         }
 
         val endpoint = if (remote == null) {
@@ -55,8 +57,8 @@ class DriveGateway(private val accessToken: String) {
 
     private fun find(name: String): RemoteSave? {
         var query = "name = '$name' and trashed = false"
-        if (FOLDER_ID.isNotEmpty()) {
-            query += " and '$FOLDER_ID' in parents"
+        if (folderId.isNotEmpty()) {
+            query += " and '$folderId' in parents"
         }
         val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         val response = request(
