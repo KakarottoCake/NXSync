@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -55,7 +58,7 @@ class MainActivity : ComponentActivity() {
     private fun startGoogleAuth() {
         val clientId = GoogleAuthorization.getClientId(this)
         if (clientId.isEmpty()) {
-            Toast.makeText(this, "Please enter and save your Client ID first!", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Please enter and save your Client ID below first!", Toast.LENGTH_LONG).show()
             statusState.value = "Client ID missing"
             return
         }
@@ -142,9 +145,124 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text("NXSync", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     Text("Cross-Platform Switch Save Sync", fontSize = 14.sp, color = Color(0xFF91A1B7))
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(18.dp))
 
-                    Text("1. Google API Credentials Setup", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
+                    // 1. TOP EXECUTION SECTION: STATUS, PROGRESS & SYNC NOW BUTTON
+                    Text(if (directory == null) "Eden folder: Not selected" else "Eden folder: Ready", fontSize = 14.sp)
+                    Text("Status: $status", fontSize = 13.sp, color = Color(0xFF91A1B7))
+
+                    Spacer(Modifier.height(10.dp))
+                    if (isWorkRunning && totalProgress > 0) {
+                        LinearProgressIndicator(
+                            progress = { progressFraction },
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    } else if (isWorkRunning) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { 0f },
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            if (directory == null) {
+                                Toast.makeText(this@MainActivity, "Please select your Eden save folder first!", Toast.LENGTH_LONG).show()
+                                status = "Select Eden save folder first"
+                            } else if (!connected) {
+                                Toast.makeText(this@MainActivity, "Please connect Google Drive or submit your Refresh Token first!", Toast.LENGTH_LONG).show()
+                                status = "Google Drive not connected"
+                            } else {
+                                SyncScheduler.syncNow(this@MainActivity)
+                                status = "Starting sync..."
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E), contentColor = Color.White),
+                    ) { Text("SYNC NOW", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { folderPicker.launch(null) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Choose Eden Save Folder") }
+
+                    Spacer(Modifier.height(24.dp))
+
+                    // 2. GOOGLE DRIVE AUTHENTICATION
+                    Text("Google Drive Authentication", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
+                    Spacer(Modifier.height(6.dp))
+
+                    Button(
+                        onClick = {
+                            if (!connected) {
+                                startGoogleAuth()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (connected) "Google Drive Connected ✓" else "Connect via Browser") }
+
+                    if (!connected) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = manualTokenInput,
+                            onValueChange = { manualTokenInput = it },
+                            label = { Text("Or Paste Refresh Token / Auth Code") },
+                            placeholder = { Text("1//... or 4/...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF4ADE80),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color(0xFFE7EDF7),
+                                unfocusedTextColor = Color(0xFFE7EDF7),
+                            ),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = {
+                                if (manualTokenInput.isNotBlank()) {
+                                    val tokenToSubmit = manualTokenInput
+                                    manualTokenInput = ""
+                                    status = "Verifying token..."
+                                    lifecycleScope.launch {
+                                        val (ok, err) = GoogleAuthorization.exchangeManualCodeOrToken(this@MainActivity, tokenToSubmit)
+                                        if (ok) {
+                                            isConnectedState.value = true
+                                            status = "Google Drive Connected!"
+                                            Toast.makeText(this@MainActivity, "Connected to Google Drive!", Toast.LENGTH_SHORT).show()
+                                            if (directory != null) {
+                                                SyncScheduler.schedule(this@MainActivity)
+                                            }
+                                        } else {
+                                            val msg = err ?: "Invalid token or code"
+                                            status = msg
+                                            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Submit Token / Code") }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+
+                    // 3. GOOGLE API CREDENTIALS SETUP (OPSEC MASKED)
+                    Text("Google API Credentials Setup", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
                     Spacer(Modifier.height(6.dp))
 
                     OutlinedTextField(
@@ -170,6 +288,8 @@ class MainActivity : ComponentActivity() {
                         placeholder = { Text("GOCSPX-...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color(0xFF4ADE80),
                             unfocusedBorderColor = Color(0xFF334155),
@@ -203,114 +323,6 @@ class MainActivity : ComponentActivity() {
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Save Credentials Config") }
-
-                    Spacer(Modifier.height(20.dp))
-                    Text("2. Google Drive Authentication", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
-                    Spacer(Modifier.height(6.dp))
-
-                    Button(
-                        onClick = {
-                            if (!connected) {
-                                startGoogleAuth()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (connected) "Google Drive Connected ✓" else "Connect via Browser") }
-
-                    if (!connected) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = manualTokenInput,
-                            onValueChange = { manualTokenInput = it },
-                            label = { Text("Or Paste Refresh Token / Auth Code") },
-                            placeholder = { Text("1//... or 4/...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF4ADE80),
-                                unfocusedBorderColor = Color(0xFF334155),
-                                focusedTextColor = Color(0xFFE7EDF7),
-                                unfocusedTextColor = Color(0xFFE7EDF7),
-                            ),
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Button(
-                            onClick = {
-                                if (manualTokenInput.isNotBlank()) {
-                                    status = "Verifying token..."
-                                    lifecycleScope.launch {
-                                        val (ok, err) = GoogleAuthorization.exchangeManualCodeOrToken(this@MainActivity, manualTokenInput)
-                                        if (ok) {
-                                            isConnectedState.value = true
-                                            status = "Google Drive Connected!"
-                                            Toast.makeText(this@MainActivity, "Connected to Google Drive!", Toast.LENGTH_SHORT).show()
-                                            if (directory != null) {
-                                                SyncScheduler.schedule(this@MainActivity)
-                                            }
-                                        } else {
-                                            val msg = err ?: "Invalid token or code"
-                                            status = msg
-                                            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Submit Token / Code") }
-                    }
-
-                    Spacer(Modifier.height(20.dp))
-                    Text("3. Save Folder & Sync Execution", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
-                    Spacer(Modifier.height(6.dp))
-                    Text(if (directory == null) "Eden folder: Not selected" else "Eden folder: Ready", fontSize = 14.sp)
-                    Text("Status: $status", fontSize = 13.sp, color = Color(0xFF91A1B7))
-
-                    Spacer(Modifier.height(10.dp))
-                    if (isWorkRunning && totalProgress > 0) {
-                        LinearProgressIndicator(
-                            progress = { progressFraction },
-                            modifier = Modifier.fillMaxWidth().height(10.dp),
-                            color = Color(0xFF4ADE80),
-                            trackColor = Color(0xFF1E293B),
-                        )
-                    } else if (isWorkRunning) {
-                        LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth().height(10.dp),
-                            color = Color(0xFF4ADE80),
-                            trackColor = Color(0xFF1E293B),
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            progress = { 0f },
-                            modifier = Modifier.fillMaxWidth().height(10.dp),
-                            color = Color(0xFF4ADE80),
-                            trackColor = Color(0xFF1E293B),
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { folderPicker.launch(null) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Choose Eden Save Folder") }
-
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            if (directory == null) {
-                                Toast.makeText(this@MainActivity, "Please select your Eden save folder first!", Toast.LENGTH_LONG).show()
-                                status = "Select Eden save folder first"
-                            } else if (!connected) {
-                                Toast.makeText(this@MainActivity, "Please connect Google Drive or submit your Refresh Token first!", Toast.LENGTH_LONG).show()
-                                status = "Google Drive not connected"
-                            } else {
-                                SyncScheduler.syncNow(this@MainActivity)
-                                status = "Starting sync..."
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E), contentColor = Color.White),
-                    ) { Text("SYNC NOW", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
 
                     Spacer(Modifier.height(30.dp))
                 }
