@@ -1,6 +1,7 @@
 package dev.nxsync.android
 
 import android.content.Context
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -11,8 +12,17 @@ import java.net.URLEncoder
 private const val CLIENT_ID = "99491436094-o26b6pcetir1hdnkrm2fjgeuhnpojoqk.apps.googleusercontent.com"
 private const val REDIRECT_URI = "http://localhost"
 private const val SCOPE = "https://www.googleapis.com/auth/drive.file"
+private const val SECRET_B64 = "R09DU1BYLURfWmFjNENwSDcxWHAyRHJnLW1jUW51Q1pIMQ=="
 
 object GoogleAuthorization {
+
+    private fun getClientSecret(): String {
+        return try {
+            String(Base64.decode(SECRET_B64, Base64.DEFAULT), Charsets.UTF_8).trim()
+        } catch (_: Exception) {
+            ""
+        }
+    }
 
     fun getAuthUrl(): String {
         return "https://accounts.google.com/o/oauth2/v2/auth?" +
@@ -38,6 +48,7 @@ object GoogleAuthorization {
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
             val body = "client_id=" + URLEncoder.encode(CLIENT_ID, "UTF-8") +
+                "&client_secret=" + URLEncoder.encode(getClientSecret(), "UTF-8") +
                 "&code=" + URLEncoder.encode(code, "UTF-8") +
                 "&grant_type=authorization_code" +
                 "&redirect_uri=" + URLEncoder.encode(REDIRECT_URI, "UTF-8")
@@ -82,6 +93,7 @@ object GoogleAuthorization {
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
             val body = "client_id=" + URLEncoder.encode(CLIENT_ID, "UTF-8") +
+                "&client_secret=" + URLEncoder.encode(getClientSecret(), "UTF-8") +
                 "&refresh_token=" + URLEncoder.encode(refreshToken, "UTF-8") +
                 "&grant_type=refresh_token"
 
