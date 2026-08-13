@@ -3,9 +3,6 @@ package dev.nxsync.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,9 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.lifecycleScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -44,12 +38,31 @@ class MainActivity : ComponentActivity() {
 
     private var isConnectedState = mutableStateOf(false)
     private var statusState = mutableStateOf("Idle")
-    private var showAuthDialogState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isConnectedState.value = GoogleAuthorization.isConnected(this)
         setContent { NXSyncScreen() }
+    }
+
+    private fun startGoogleAuth() {
+        statusState.value = "Waiting for Google login in browser..."
+        lifecycleScope.launch {
+            GoogleAuthorization.startLoopbackAuth(this@MainActivity) { success, errorDetail ->
+                if (success) {
+                    isConnectedState.value = true
+                    statusState.value = "Google Drive Connected!"
+                    Toast.makeText(this@MainActivity, "Google Drive Connected Successfully!", Toast.LENGTH_SHORT).show()
+                    val prefs = getSharedPreferences("nxsync", MODE_PRIVATE)
+                    if (prefs.getString("eden_tree_uri", null) != null) {
+                        SyncScheduler.schedule(this@MainActivity)
+                    }
+                } else {
+                    statusState.value = "Auth failed: ${errorDetail ?: "Cancelled"}"
+                    Toast.makeText(this@MainActivity, "Authorization Failed: ${errorDetail ?: "Cancelled"}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     @Composable
@@ -58,7 +71,6 @@ class MainActivity : ComponentActivity() {
         var directory by remember { mutableStateOf(preferences.getString("eden_tree_uri", null)) }
         var connected by isConnectedState
         var status by statusState
-        var showAuthDialog by showAuthDialogState
 
         val workInfos by WorkManager.getInstance(this)
             .getWorkInfosForUniqueWorkLiveData(SyncScheduler.WORK_NAME_MANUAL)
@@ -130,7 +142,7 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             if (!connected) {
-                                showAuthDialog = true
+                                startGoogleAuth()
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -149,72 +161,6 @@ class MainActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Sync now") }
-                    }
-                }
-
-                if (showAuthDialog) {
-                    Dialog(
-                        onDismissRequest = { showAuthDialog = false },
-                        properties = DialogProperties(usePlatformDefaultWidth = false),
-                    ) {
-                        Surface(modifier = Modifier.fillMaxSize()) {
-                            AndroidView(
-                                factory = { context ->
-                                    WebView(context).apply {
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        settings.userAgentString =
-                                            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
-
-                                        webViewClient = object : WebViewClient() {
-                                            override fun shouldOverrideUrlLoading(
-                                                view: WebView?,
-                                                request: WebResourceRequest?,
-                                            ): Boolean {
-                                                val url = request?.url?.toString() ?: ""
-                                                if (url.contains("code=")) {
-                                                    val uri = Uri.parse(url)
-                                                    val code = uri.getQueryParameter("code")
-                                                    if (!code.isNullOrEmpty()) {
-                                                        showAuthDialog = false
-                                                        statusState.value = "Exchanging token..."
-                                                        lifecycleScope.launch {
-                                                            val success = GoogleAuthorization.exchangeCodeForRefreshToken(
-                                                                this@MainActivity,
-                                                                code,
-                                                            )
-                                                            if (success) {
-                                                                isConnectedState.value = true
-                                                                statusState.value = "Google Drive Connected!"
-                                                                Toast.makeText(
-                                                                    this@MainActivity,
-                                                                    "Google Drive Connected Successfully!",
-                                                                    Toast.LENGTH_SHORT,
-                                                                ).show()
-                                                                if (directory != null) {
-                                                                    SyncScheduler.schedule(this@MainActivity)
-                                                                }
-                                                            } else {
-                                                                statusState.value = "Token exchange failed"
-                                                                Toast.makeText(
-                                                                    this@MainActivity,
-                                                                    "Authorization Failed",
-                                                                    Toast.LENGTH_LONG,
-                                                                ).show()
-                                                            }
-                                                        }
-                                                        return true
-                                                    }
-                                                }
-                                                return super.shouldOverrideUrlLoading(view, request)
-                                            }
-                                        }
-                                        loadUrl(GoogleAuthorization.getAuthUrl())
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
                     }
                 }
             }
