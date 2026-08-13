@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -259,44 +260,58 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Spacer(Modifier.height(20.dp))
-                    Text("3. Save Folder & Sync", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
+                    Text("3. Save Folder & Sync Execution", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF4ADE80))
                     Spacer(Modifier.height(6.dp))
                     Text(if (directory == null) "Eden folder: Not selected" else "Eden folder: Ready", fontSize = 14.sp)
                     Text("Status: $status", fontSize = 13.sp, color = Color(0xFF91A1B7))
 
+                    Spacer(Modifier.height(10.dp))
                     if (isWorkRunning && totalProgress > 0) {
-                        Spacer(Modifier.height(10.dp))
                         LinearProgressIndicator(
                             progress = { progressFraction },
-                            modifier = Modifier.fillMaxWidth().height(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
                             color = Color(0xFF4ADE80),
                             trackColor = Color(0xFF1E293B),
                         )
                     } else if (isWorkRunning) {
-                        Spacer(Modifier.height(10.dp))
                         LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth().height(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { 0f },
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
                             color = Color(0xFF4ADE80),
                             trackColor = Color(0xFF1E293B),
                         )
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = { folderPicker.launch(null) },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Choose Eden save folder") }
+                    ) { Text("Choose Eden Save Folder") }
 
-                    if (directory != null && connected) {
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = {
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (directory == null) {
+                                Toast.makeText(this@MainActivity, "Please select your Eden save folder first!", Toast.LENGTH_LONG).show()
+                                status = "Select Eden save folder first"
+                            } else if (!connected) {
+                                Toast.makeText(this@MainActivity, "Please connect Google Drive or submit your Refresh Token first!", Toast.LENGTH_LONG).show()
+                                status = "Google Drive not connected"
+                            } else {
                                 SyncScheduler.syncNow(this@MainActivity)
                                 status = "Starting sync..."
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Sync now") }
-                    }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E), contentColor = Color.White),
+                    ) { Text("SYNC NOW", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+
                     Spacer(Modifier.height(30.dp))
                 }
             }
