@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets
 
 private const val API = "https://www.googleapis.com/drive/v3"
 private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
+private const val FOLDER_ID = "1-6xIz7Jqfu4lb4Ccmq_Eoy-4PIB3zHVW"
 
 data class RemoteSave(
     val id: String,
@@ -31,23 +32,32 @@ class DriveGateway(private val accessToken: String) {
         val metadata = JSONObject()
             .put("name", name)
             .put("appProperties", properties)
+        
+        if (remote == null && FOLDER_ID.isNotEmpty()) {
+            metadata.put("parents", JSONArray().put(FOLDER_ID))
+        }
+
         val endpoint = if (remote == null) {
             "$UPLOAD/files?uploadType=resumable"
         } else {
             "$UPLOAD/files/${remote.id}?uploadType=resumable"
         }
-        val session = request(
+        val response = request(
             endpoint,
             if (remote == null) "POST" else "PATCH",
             metadata.toString().toByteArray(),
             "application/json; charset=UTF-8",
-        ).headers["Location"] ?: error("Drive did not return an upload session")
+        )
+        val session = response.getLocationHeader() ?: error("Drive did not return an upload session location header")
         uploadFile(session, archive.file)
         return true
     }
 
     private fun find(name: String): RemoteSave? {
-        val query = "name = '$name' and trashed = false"
+        var query = "name = '$name' and trashed = false"
+        if (FOLDER_ID.isNotEmpty()) {
+            query += " and '$FOLDER_ID' in parents"
+        }
         val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         val response = request(
             "$API/files?q=$encoded&pageSize=1&spaces=drive" +
@@ -68,7 +78,13 @@ class DriveGateway(private val accessToken: String) {
     private data class Response(
         val body: String,
         val headers: Map<String, String>,
-    )
+    ) {
+        fun getLocationHeader(): String? {
+            return headers.entries
+                .firstOrNull { it.key.equals("Location", ignoreCase = true) }
+                ?.value
+        }
+    }
 
     private fun request(
         endpoint: String,
