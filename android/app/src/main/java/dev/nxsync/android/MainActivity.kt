@@ -60,8 +60,9 @@ class MainActivity : ComponentActivity() {
                         SyncScheduler.schedule(this@MainActivity)
                     }
                 } else {
-                    statusState.value = "Auth failed: ${errorDetail ?: "Cancelled"}"
-                    Toast.makeText(this@MainActivity, "Authorization Failed: ${errorDetail ?: "Cancelled"}", Toast.LENGTH_LONG).show()
+                    val msg = "Auth failed: ${errorDetail ?: "Cancelled"}"
+                    statusState.value = msg
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -178,7 +179,7 @@ class MainActivity : ComponentActivity() {
                                 if (manualTokenInput.isNotBlank()) {
                                     status = "Verifying token..."
                                     lifecycleScope.launch {
-                                        val ok = GoogleAuthorization.exchangeManualCodeOrToken(this@MainActivity, manualTokenInput)
+                                        val (ok, err) = GoogleAuthorization.exchangeManualCodeOrToken(this@MainActivity, manualTokenInput)
                                         if (ok) {
                                             isConnectedState.value = true
                                             status = "Google Drive Connected!"
@@ -187,8 +188,9 @@ class MainActivity : ComponentActivity() {
                                                 SyncScheduler.schedule(this@MainActivity)
                                             }
                                         } else {
-                                            status = "Invalid token or authorization code"
-                                            Toast.makeText(this@MainActivity, "Invalid Token or Code", Toast.LENGTH_LONG).show()
+                                            val msg = err ?: "Invalid token or code"
+                                            status = msg
+                                            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }

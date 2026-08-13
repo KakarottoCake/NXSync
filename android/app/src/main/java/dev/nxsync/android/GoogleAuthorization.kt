@@ -43,30 +43,6 @@ object GoogleAuthorization {
         return true
     }
 
-    suspend fun exchangeManualCodeOrToken(context: Context, input: String): Boolean = withContext(Dispatchers.IO) {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return@withContext false
-
-        // If user pasted a refresh token directly (e.g. starting with 1// or 1/ or long token)
-        if (trimmed.startsWith("1/") || trimmed.length > 50) {
-            if (saveRefreshToken(context, trimmed)) {
-                val access = accessToken(context)
-                if (!access.isNullOrEmpty()) {
-                    return@withContext true
-                }
-            }
-        }
-
-        // Otherwise try exchanging as authorization code with standard redirect URIs
-        val redirectUris = listOf("http://localhost", "http://127.0.0.1", "nxsync://oauth")
-        for (redirectUri in redirectUris) {
-            if (exchangeCode(context, trimmed, redirectUri)) {
-                return@withContext true
-            }
-        }
-        return@withContext false
-    }
-
     suspend fun startLoopbackAuth(context: Context, onResult: (Boolean, String?) -> Unit) = withContext(Dispatchers.IO) {
         try {
             activeServer?.close()
@@ -88,7 +64,7 @@ object GoogleAuthorization {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
 
-            server.soTimeout = 180_000
+            server.soTimeout = 180_000 // 3 minute timeout
             val client = server.accept()
             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
             val requestLine = reader.readLine().orEmpty()
@@ -115,10 +91,10 @@ object GoogleAuthorization {
             server.close()
 
             if (!authCode.isNullOrEmpty()) {
-                val success = exchangeCode(context, authCode, redirectUri)
-                withContext(Dispatchers.Main) { onResult(success, if (success) null else "Token exchange rejected by Google") }
+                val (success, errorMsg) = exchangeCode(context, authCode, redirectUri)
+                withContext(Dispatchers.Main) { onResult(success, errorMsg) }
             } else {
-                withContext(Dispatchers.Main) { onResult(false, "Authorization code missing from callback") }
+                withContext(Dispatchers.Main) { onResult(false, "No code received from browser callback") }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -131,7 +107,7 @@ object GoogleAuthorization {
         return !prefs.getString("google_refresh_token", null).isNullOrEmpty()
     }
 
-    suspend fun exchangeCode(context: Context, code: String, redirectUri: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun exchangeCode(context: Context, code: String, redirectUri: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
         try {
             val url = URI("https://oauth2.googleapis.com/token").toURL()
             val conn = url.openConnection() as HttpURLConnection
@@ -163,14 +139,37 @@ object GoogleAuthorization {
                         .putString("google_refresh_token", refreshToken)
                         .putString("google_access_token", accessToken)
                         .apply()
-                    return@withContext true
+                    return@withContext Pair(true, null)
                 }
             }
-            return@withContext false
+            return@withContext Pair(false, "Google HTTP $responseCode: $text")
         } catch (e: Exception) {
             e.printStackTrace()
-            return@withContext false
+            return@withContext Pair(false, e.message ?: "Token exchange failed")
         }
+    }
+
+    suspend fun exchangeManualCodeOrToken(context: Context, input: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return@withContext Pair(false, "Input is empty")
+
+        if (trimmed.startsWith("1/") || trimmed.length > 50) {
+            if (saveRefreshToken(context, trimmed)) {
+                val access = accessToken(context)
+                if (!access.isNullOrEmpty()) {
+                    return@withContext Pair(true, null)
+                }
+            }
+        }
+
+        val redirectUris = listOf("http://localhost", "http://127.0.0.1", "nxsync://oauth")
+        var lastError = "Invalid code or token"
+        for (redirectUri in redirectUris) {
+            val (ok, err) = exchangeCode(context, trimmed, redirectUri)
+            if (ok) return@withContext Pair(true, null)
+            if (err != null) lastError = err
+        }
+        return@withContext Pair(false, lastError)
     }
 
     fun accessToken(context: Context): String? {
