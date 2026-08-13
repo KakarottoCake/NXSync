@@ -1,13 +1,8 @@
 #define TESLA_INIT_IMPL
-
-#if __has_include(<ultrahand.hpp>)
-#include <ultrahand.hpp>
-#else
 #include <tesla.hpp>
-#endif
 
 #include <cstdio>
-#include <fstream>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -36,11 +31,16 @@ struct DisplayStatus {
 };
 
 DisplayStatus read_status() {
-    std::ifstream input(kStatusPath);
-    if (!input) return {};
-    const std::string json(
-        (std::istreambuf_iterator<char>(input)),
-        std::istreambuf_iterator<char>());
+    FILE* f = std::fopen(kStatusPath, "rb");
+    if (!f) return {};
+    std::fseek(f, 0, SEEK_END);
+    long sz = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 8192) { std::fclose(f); return {}; }
+    std::string json(sz, '\0');
+    std::fread(&json[0], 1, sz, f);
+    std::fclose(f);
+
     DisplayStatus status;
     status.state = json_value(json, "state");
     status.active_title = json_value(json, "active_title_id");
@@ -51,11 +51,10 @@ DisplayStatus read_status() {
 
 bool send_command(const char* action) {
     const std::string temporary = std::string(kCommandPath) + ".tmp";
-    std::ofstream output(temporary, std::ios::trunc);
-    if (!output) return false;
-    output << "{\"action\":\"" << action << "\"}\n";
-    output.close();
-    if (!output) return false;
+    FILE* f = std::fopen(temporary.c_str(), "wb");
+    if (!f) return false;
+    std::fprintf(f, "{\"action\":\"%s\"}\n", action);
+    std::fclose(f);
     std::remove(kCommandPath);
     return std::rename(temporary.c_str(), kCommandPath) == 0;
 }
@@ -70,10 +69,12 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Status"));
         list->addItem(new tsl::elm::ListItem(status.state, status.detail));
         const std::string title =
-            status.active_title != "0000000000000000"
+            (status.active_title != "0000000000000000" && !status.active_title.empty())
                 ? status.active_title
                 : status.last_title;
-        list->addItem(new tsl::elm::ListItem("Title ID", title));
+        if (!title.empty()) {
+            list->addItem(new tsl::elm::ListItem("Title ID", title));
+        }
 
         list->addItem(new tsl::elm::CategoryHeader("Actions"));
         auto* sync = new tsl::elm::ListItem("Sync Now");
@@ -88,7 +89,7 @@ public:
         });
         list->addItem(pull);
         list->addItem(new tsl::elm::CategoryHeader(
-            "Restore waits until the game closes"));
+            "Restore waits until game closes"));
         frame->setContent(list);
         return frame;
     }

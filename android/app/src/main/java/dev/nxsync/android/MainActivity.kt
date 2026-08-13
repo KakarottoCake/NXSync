@@ -1,13 +1,12 @@
 package dev.nxsync.android
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,30 +16,82 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private var isConnectedState = mutableStateOf(false)
+    private var statusState = mutableStateOf("Idle")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isConnectedState.value = GoogleAuthorization.isConnected(this)
         setContent { NXSyncScreen() }
+    }
+
+    private fun startOAuthFlow() {
+        statusState.value = "Waiting for Google login in browser..."
+        lifecycleScope.launch {
+            GoogleAuthorization.connect(this@MainActivity) { success ->
+                if (success) {
+                    isConnectedState.value = true
+                    statusState.value = "Google Drive Connected!"
+                    Toast.makeText(this@MainActivity, "Google Drive Connected Successfully!", Toast.LENGTH_SHORT).show()
+                    val prefs = getSharedPreferences("nxsync", MODE_PRIVATE)
+                    if (prefs.getString("eden_tree_uri", null) != null) {
+                        SyncScheduler.schedule(this@MainActivity)
+                    }
+                } else {
+                    statusState.value = "Google login cancelled or failed"
+                    Toast.makeText(this@MainActivity, "Authorization Failed", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     @Composable
     private fun NXSyncScreen() {
         val preferences = getSharedPreferences("nxsync", MODE_PRIVATE)
         var directory by remember { mutableStateOf(preferences.getString("eden_tree_uri", null)) }
-        var connected by remember { mutableStateOf(false) }
-        var status by remember { mutableStateOf("Idle") }
+        var connected by isConnectedState
+        var status by statusState
+
+        // Observe WorkManager for manual sync progress
+        val workInfos by WorkManager.getInstance(this)
+            .getWorkInfosForUniqueWorkLiveData(SyncScheduler.WORK_NAME_MANUAL)
+            .observeAsState()
+
+        val activeWork = workInfos?.firstOrNull()
+        val progressData = activeWork?.progress
+        val isWorkRunning = activeWork?.state == WorkInfo.State.RUNNING
+
+        val currentProgress = progressData?.getInt("current", 0) ?: 0
+        val totalProgress = progressData?.getInt("total", 0) ?: 0
+        val workStatus = progressData?.getString("status")
+
+        if (!workStatus.isNullOrEmpty() && isWorkRunning) {
+            status = workStatus
+        } else if (activeWork?.state == WorkInfo.State.SUCCEEDED && !workStatus.isNullOrEmpty()) {
+            status = workStatus
+        }
+
+        val progressFraction = if (totalProgress > 0) currentProgress.toFloat() / totalProgress.toFloat() else 0f
 
         val folderPicker = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocumentTree(),
@@ -53,17 +104,11 @@ class MainActivity : ComponentActivity() {
                 )
                 preferences.edit().putString("eden_tree_uri", uri.toString()).apply()
                 directory = uri.toString()
-                SyncScheduler.schedule(this)
-                status = "Sync scheduled"
+                if (connected) {
+                    SyncScheduler.schedule(this)
+                    status = "Sync scheduled"
+                }
             }
-        }
-        val authorizationResolution = rememberLauncherForActivityResult(
-            ActivityResultContracts.StartIntentSenderForResult(),
-        ) { result ->
-            connected = result.resultCode == Activity.RESULT_OK &&
-                GoogleAuthorization.finishResolution(this, result.data)
-            status = if (connected) "Idle" else "Google authorization cancelled"
-            if (connected && directory != null) SyncScheduler.schedule(this)
         }
 
         MaterialTheme {
@@ -76,24 +121,33 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(28.dp))
                     Text(if (directory == null) "Eden folder: Not selected" else "Eden folder: Ready")
                     Text("Status: $status", color = Color(0xFF91A1B7))
+
+                    if (isWorkRunning && totalProgress > 0) {
+                        Spacer(Modifier.height(14.dp))
+                        LinearProgressIndicator(
+                            progress = { progressFraction },
+                            modifier = Modifier.fillMaxWidth().height(8.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    } else if (isWorkRunning) {
+                        Spacer(Modifier.height(14.dp))
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(8.dp),
+                            color = Color(0xFF4ADE80),
+                            trackColor = Color(0xFF1E293B),
+                        )
+                    }
+
                     Spacer(Modifier.height(22.dp))
                     Button(
                         onClick = {
-                            GoogleAuthorization.connect(
-                                this@MainActivity,
-                                authorizationResolution,
-                                onConnected = {
-                                    connected = true
-                                    status = "Idle"
-                                    if (directory != null) {
-                                        SyncScheduler.schedule(this@MainActivity)
-                                    }
-                                },
-                                onError = { status = it.message ?: "Authorization failed" },
-                            )
+                            if (!connected) {
+                                startOAuthFlow()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (connected) "Google Drive connected" else "Connect Google Drive") }
+                    ) { Text(if (connected) "Google Drive Connected" else "Connect Google Drive") }
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = { folderPicker.launch(null) },
@@ -104,7 +158,7 @@ class MainActivity : ComponentActivity() {
                         Button(
                             onClick = {
                                 SyncScheduler.syncNow(this@MainActivity)
-                                status = "Sync scheduled"
+                                status = "Starting sync..."
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Sync now") }

@@ -40,6 +40,9 @@ type Token struct {
 }
 
 func (c OAuthConfig) withDefaults() OAuthConfig {
+	if c.ClientID == "" {
+		c.ClientID = "99491436094-o26b6pcetir1hdnkrm2fjgeuhnpojoqk.apps.googleusercontent.com"
+	}
 	if c.AuthURL == "" {
 		c.AuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
 	}

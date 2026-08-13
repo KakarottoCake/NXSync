@@ -126,7 +126,7 @@ func (a *App) connect(token drive.Token) {
 	httpClient := drive.AuthenticatedClient(
 		drive.OAuthConfig{ClientID: a.clientID}, token, a.tokenPath,
 	)
-	a.engine = &syncengine.Engine{Remote: &drive.Client{HTTP: httpClient}}
+	a.engine = &syncengine.Engine{Remote: &drive.Client{HTTP: httpClient, FolderID: "1-6xIz7Jqfu4lb4Ccmq_Eoy-4PIB3zHVW"}}
 	a.setState(func(state *State) {
 		state.Connected = true
 		state.Status = "Idle"

@@ -14,7 +14,7 @@ import (
 
 // Set this for release builds:
 // go build -ldflags "-X main.googleClientID=<installed-app-client-id>"
-var googleClientID string
+var googleClientID = "99491436094-o26b6pcetir1hdnkrm2fjgeuhnpojoqk.apps.googleusercontent.com"
 
 //go:embed frontend/*
 var assets embed.FS
